@@ -1,9 +1,16 @@
 # -*- coding: utf-8 -*-
 
-# Copyright 2018, IBM.
+# This code is part of Qiskit.
 #
-# This source code is licensed under the Apache License, Version 2.0 found in
-# the LICENSE.txt file in the root directory of this source tree.
+# (C) Copyright IBM 2017, 2018.
+#
+# This code is licensed under the Apache License, Version 2.0. You may
+# obtain a copy of this license in the LICENSE.txt file in the root directory
+# of this source tree or at http://www.apache.org/licenses/LICENSE-2.0.
+#
+# Any modifications or derivative works of this code must retain this
+# copyright notice, and modified files need to carry a notice indicating
+# that they have been altered from the originals.
 
 # pylint: disable=missing-docstring
 
@@ -12,11 +19,13 @@
 import time
 from contextlib import suppress
 
+from qiskit.providers.ibmq.apiconstants import API_JOB_FINAL_STATES, ApiJobStatus
 from qiskit.test.mock import new_fake_qobj, FakeRueschlikon
 from qiskit.providers import JobError, JobTimeoutError
-from qiskit.providers.ibmq.api import ApiError
-from qiskit.providers.ibmq.ibmqjob import API_FINAL_STATES, IBMQJob
+from qiskit.providers.ibmq.api.exceptions import ApiError
+from qiskit.providers.ibmq.job.ibmqjob import IBMQJob
 from qiskit.providers.jobstatus import JobStatus
+
 from ..jobtestcase import JobTestCase
 
 
@@ -283,12 +292,6 @@ class TestIBMQJobStates(JobTestCase):
         with self.assertRaises(JobTimeoutError):
             job.result(timeout=0.2)
 
-    def test_cancel_while_initializing_fails(self):
-        job = self.run_with_api(CancellableAPI())
-        can_cancel = job.cancel()
-        self.assertFalse(can_cancel)
-        self.assertEqual(job.status(), JobStatus.INITIALIZING)
-
     def test_only_final_states_cause_detailed_request(self):
         from unittest import mock
 
@@ -307,13 +310,13 @@ class TestIBMQJobStates(JobTestCase):
                 with suppress(BaseFakeAPI.NoMoreStatesError):
                     self._current_api.progress()
 
-                with mock.patch.object(self._current_api, 'get_job',
-                                       wraps=self._current_api.get_job):
+                with mock.patch.object(self._current_api, 'job_get',
+                                       wraps=self._current_api.job_get):
                     job.status()
-                    if status in API_FINAL_STATES:
-                        self.assertTrue(self._current_api.get_job.called)
+                    if ApiJobStatus(status) in API_JOB_FINAL_STATES:
+                        self.assertTrue(self._current_api.job_get.called)
                     else:
-                        self.assertFalse(self._current_api.get_job.called)
+                        self.assertFalse(self._current_api.job_get.called)
 
     def run_with_api(self, api):
         """Creates a new ``IBMQJob`` running with the provided API object."""
@@ -354,22 +357,22 @@ class BaseFakeAPI:
                 'project': 'test-project'
             })
 
-    def get_job(self, job_id):
+    def job_get(self, job_id):
         if not job_id:
             return {'status': 'Error', 'error': 'Job ID not specified'}
         return self._job_status[self._state]
 
-    def get_status_job(self, job_id):
+    def job_status(self, job_id):
         summary_fields = ['status', 'error', 'infoQueue']
-        complete_response = self.get_job(job_id)
+        complete_response = self.job_get(job_id)
         return {key: value for key, value in complete_response.items()
                 if key in summary_fields}
 
-    def run_job(self, *_args, **_kwargs):
+    def job_submit(self, *_args, **_kwargs):
         time.sleep(0.2)
         return {'id': 'TEST_ID'}
 
-    def cancel_job(self, job_id, *_args, **_kwargs):
+    def job_cancel(self, job_id, *_args, **_kwargs):
         if not job_id:
             return {'status': 'Error', 'error': 'Job ID not specified'}
         return {} if self._can_cancel else {
@@ -448,14 +451,14 @@ class QueuedAPI(BaseFakeAPI):
 class RejectingJobAPI(BaseFakeAPI):
     """Class for emulating an API unable of initializing."""
 
-    def run_job(self, *_args, **_kwargs):
+    def job_submit(self, *_args, **_kwargs):
         return {'error': 'invalid qobj'}
 
 
 class UnavailableRunAPI(BaseFakeAPI):
     """Class for emulating an API throwing before even initializing."""
 
-    def run_job(self, *_args, **_kwargs):
+    def job_submit(self, *_args, **_kwargs):
         time.sleep(0.2)
         raise ApiError()
 
@@ -467,7 +470,7 @@ class ThrowingAPI(BaseFakeAPI):
         {'status': 'RUNNING'}
     ]
 
-    def get_job(self, job_id):
+    def job_get(self, job_id):
         raise ApiError()
 
 
@@ -484,27 +487,27 @@ class ThrowingNonJobRelatedErrorAPI(BaseFakeAPI):
         super().__init__()
         self._number_of_exceptions_to_throw = errors_before_success
 
-    def get_job(self, job_id):
+    def job_get(self, job_id):
         if self._number_of_exceptions_to_throw != 0:
             self._number_of_exceptions_to_throw -= 1
             raise ApiError()
 
-        return super().get_job(job_id)
+        return super().job_get(job_id)
 
 
 class ThrowingGetJobAPI(BaseFakeAPI):
     """Class for emulating an API throwing in the middle of execution. But not in
-       get_status_job() , just in get_job().
+       get_status_job(), just in job_get().
        """
 
     _job_status = [
         {'status': 'COMPLETED'}
     ]
 
-    def get_status_job(self, job_id):
+    def job_status(self, job_id):
         return self._job_status[self._state]
 
-    def get_job(self, job_id):
+    def job_get(self, job_id):
         raise ApiError('Unexpected error')
 
 
@@ -542,5 +545,5 @@ class ErroredCancellationAPI(BaseFakeAPI):
 
     _can_cancel = True
 
-    def cancel_job(self, job_id, *_args, **_kwargs):
+    def job_cancel(self, job_id, *_args, **_kwargs):
         return {'status': 'Error', 'error': 'test-error-while-cancelling'}

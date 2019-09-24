@@ -1,16 +1,24 @@
 # -*- coding: utf-8 -*-
 
-# Copyright 2018, IBM.
+# This code is part of Qiskit.
 #
-# This source code is licensed under the Apache License, Version 2.0 found in
-# the LICENSE.txt file in the root directory of this source tree.
+# (C) Copyright IBM 2017, 2018.
+#
+# This code is licensed under the Apache License, Version 2.0. You may
+# obtain a copy of this license in the LICENSE.txt file in the root directory
+# of this source tree or at http://www.apache.org/licenses/LICENSE-2.0.
+#
+# Any modifications or derivative works of this code must retain this
+# copyright notice, and modified files need to carry a notice indicating
+# that they have been altered from the originals.
 
 """Utilities for working with credentials for the IBMQ package."""
 
 from collections import OrderedDict
+from typing import Dict, Optional
 import logging
 
-from .credentials import Credentials
+from .credentials import Credentials, HubGroupProject
 from .exceptions import CredentialsError
 from .configrc import read_credentials_from_qiskitrc, store_credentials
 from .environ import read_credentials_from_environ
@@ -19,7 +27,9 @@ from .qconfig import read_credentials_from_qconfig
 logger = logging.getLogger(__name__)
 
 
-def discover_credentials(qiskitrc_filename=None):
+def discover_credentials(
+        qiskitrc_filename: Optional[str] = None
+) -> Dict[HubGroupProject, Credentials]:
     """Automatically discover credentials for IBM Q.
 
     This method looks for credentials in the following locations, in order,

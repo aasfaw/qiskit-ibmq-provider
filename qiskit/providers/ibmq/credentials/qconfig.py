@@ -1,24 +1,32 @@
 # -*- coding: utf-8 -*-
 
-# Copyright 2018, IBM.
+# This code is part of Qiskit.
 #
-# This source code is licensed under the Apache License, Version 2.0 found in
-# the LICENSE.txt file in the root directory of this source tree.
+# (C) Copyright IBM 2017, 2018.
+#
+# This code is licensed under the Apache License, Version 2.0. You may
+# obtain a copy of this license in the LICENSE.txt file in the root directory
+# of this source tree or at http://www.apache.org/licenses/LICENSE-2.0.
+#
+# Any modifications or derivative works of this code must retain this
+# copyright notice, and modified files need to carry a notice indicating
+# that they have been altered from the originals.
 
 """Utilities for reading credentials from the deprecated `Qconfig.py` file."""
 
 import os
 from collections import OrderedDict
+from typing import Dict
 from importlib.util import module_from_spec, spec_from_file_location
 
-from .credentials import Credentials
+from .credentials import Credentials, HubGroupProject
 from .exceptions import CredentialsError
 
 DEFAULT_QCONFIG_FILE = 'Qconfig.py'
 QE_URL = 'https://quantumexperience.ng.bluemix.net/api'
 
 
-def read_credentials_from_qconfig():
+def read_credentials_from_qconfig() -> Dict[HubGroupProject, Credentials]:
     """Read a `QConfig.py` file and return its credentials.
 
     Returns:

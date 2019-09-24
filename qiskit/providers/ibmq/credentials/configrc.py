@@ -1,9 +1,16 @@
 # -*- coding: utf-8 -*-
 
-# Copyright 2018, IBM.
+# This code is part of Qiskit.
 #
-# This source code is licensed under the Apache License, Version 2.0 found in
-# the LICENSE.txt file in the root directory of this source tree.
+# (C) Copyright IBM 2017, 2018.
+#
+# This code is licensed under the Apache License, Version 2.0. You may
+# obtain a copy of this license in the LICENSE.txt file in the root directory
+# of this source tree or at http://www.apache.org/licenses/LICENSE-2.0.
+#
+# Any modifications or derivative works of this code must retain this
+# copyright notice, and modified files need to carry a notice indicating
+# that they have been altered from the originals.
 
 """Utilities for reading and writing credentials from and to config files."""
 
@@ -12,15 +19,18 @@ import os
 from ast import literal_eval
 from collections import OrderedDict
 from configparser import ConfigParser, ParsingError
+from typing import Dict, Optional, Any
 
-from .credentials import Credentials
+from .credentials import Credentials, HubGroupProject
 from .exceptions import CredentialsError
 
 DEFAULT_QISKITRC_FILE = os.path.join(os.path.expanduser("~"),
                                      '.qiskit', 'qiskitrc')
 
 
-def read_credentials_from_qiskitrc(filename=None):
+def read_credentials_from_qiskitrc(
+        filename: Optional[str] = None
+) -> Dict[HubGroupProject, Credentials]:
     """Read a configuration file and return a dict with its sections.
 
     Args:
@@ -63,7 +73,10 @@ def read_credentials_from_qiskitrc(filename=None):
     return credentials_dict
 
 
-def write_qiskit_rc(credentials, filename=None):
+def write_qiskit_rc(
+        credentials: Dict[HubGroupProject, Credentials],
+        filename: Optional[str] = None
+) -> None:
     """Write credentials to the configuration file.
 
     Args:
@@ -74,12 +87,12 @@ def write_qiskit_rc(credentials, filename=None):
         filename (str): full path to the qiskitrc file. If `None`, the default
             location is used (`HOME/.qiskit/qiskitrc`).
     """
-    def _credentials_object_to_dict(obj):
-        return {key: getattr(obj, key)
-                for key in ['token', 'url', 'proxies', 'verify']
+    def _credentials_object_to_dict(obj: Credentials) -> Dict[str, Any]:
+        return {key: getattr(obj, key) for key in
+                ['token', 'url', 'proxies', 'verify']
                 if getattr(obj, key)}
 
-    def _section_name(credentials_):
+    def _section_name(credentials_: Credentials) -> str:
         """Return a string suitable for use as a unique section name."""
         base_name = 'ibmq'
         if credentials_.is_ibmq():
@@ -104,7 +117,11 @@ def write_qiskit_rc(credentials, filename=None):
         config_parser.write(config_file)
 
 
-def store_credentials(credentials, overwrite=False, filename=None):
+def store_credentials(
+        credentials: Credentials,
+        overwrite: bool = False,
+        filename: Optional[str] = None
+) -> None:
     """Store the credentials for a single account in the configuration file.
 
     Args:
@@ -129,7 +146,10 @@ def store_credentials(credentials, overwrite=False, filename=None):
     write_qiskit_rc(stored_credentials, filename)
 
 
-def remove_credentials(credentials, filename=None):
+def remove_credentials(
+        credentials: Credentials,
+        filename: Optional[str] = None
+) -> None:
     """Remove credentials from qiskitrc.
 
     Args:

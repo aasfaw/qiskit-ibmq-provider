@@ -1,149 +1,187 @@
 # -*- coding: utf-8 -*-
 
-# Copyright 2018, IBM.
+# This code is part of Qiskit.
 #
-# This source code is licensed under the Apache License, Version 2.0 found in
-# the LICENSE.txt file in the root directory of this source tree.
+# (C) Copyright IBM 2017, 2018.
+#
+# This code is licensed under the Apache License, Version 2.0. You may
+# obtain a copy of this license in the LICENSE.txt file in the root directory
+# of this source tree or at http://www.apache.org/licenses/LICENSE-2.0.
+#
+# Any modifications or derivative works of this code must retain this
+# copyright notice, and modified files need to carry a notice indicating
+# that they have been altered from the originals.
+
+"""IBMQ Remote Backend Tests."""
+
+from qiskit import (BasicAer, ClassicalRegister, QuantumCircuit,
+                    QuantumRegister)
+from qiskit.test import slow_test
+from qiskit.compiler import assemble, transpile
+
+from ..ibmqtestcase import IBMQTestCase
+from ..decorators import requires_provider
 
 
-"""Tests for all IBMQ backends."""
+class TestIBMQBackends(IBMQTestCase):
+    """Qiskit test for remote backend validation.
 
-from unittest import skip
-
-from qiskit import ClassicalRegister, QuantumCircuit, QuantumRegister
-from qiskit.providers.exceptions import QiskitBackendNotFoundError
-from qiskit.providers.ibmq import IBMQ
-from qiskit.qobj import QobjHeader
-from qiskit.test import QiskitTestCase, requires_qe_access, slow_test
-from qiskit.tools.compiler import compile
-
-
-class TestIBMQBackends(QiskitTestCase):
-    """Tests for all the IBMQ backends."""
-    def setUp(self):
-        super().setUp()
-
-        qr = QuantumRegister(1)
-        cr = ClassicalRegister(1)
-        self.qc1 = QuantumCircuit(qr, cr, name='circuit0')
-        self.qc1.h(qr[0])
-        self.qc1.measure(qr, cr)
-
-    @requires_qe_access
-    def test_remote_backends_exist(self, qe_token, qe_url):
-        """Test if there are remote backends."""
-        IBMQ.enable_account(qe_token, qe_url)
-        remotes = IBMQ.backends()
-        self.assertTrue(len(remotes) > 0)
-
-    @requires_qe_access
-    def test_remote_backends_exist_real_device(self, qe_token, qe_url):
-        """Test if there are remote backends that are devices."""
-        IBMQ.enable_account(qe_token, qe_url)
-        remotes = IBMQ.backends(simulator=False)
-        self.assertTrue(remotes)
-
-    @requires_qe_access
-    def test_remote_backends_exist_simulator(self, qe_token, qe_url):
-        """Test if there are remote backends that are simulators."""
-        IBMQ.enable_account(qe_token, qe_url)
-        remotes = IBMQ.backends(simulator=True)
-        self.assertTrue(remotes)
-
-    @requires_qe_access
-    def test_remote_backend_status(self, qe_token, qe_url):
-        """Test backend_status."""
-        IBMQ.enable_account(qe_token, qe_url)
-        for backend in IBMQ.backends():
-            _ = backend.status()
-
-    @requires_qe_access
-    def test_remote_backend_configuration(self, qe_token, qe_url):
-        """Test backend configuration."""
-        IBMQ.enable_account(qe_token, qe_url)
-        remotes = IBMQ.backends()
-        for backend in remotes:
-            _ = backend.configuration()
-
-    @requires_qe_access
-    def test_remote_backend_properties(self, qe_token, qe_url):
-        """Test backend properties."""
-        IBMQ.enable_account(qe_token, qe_url)
-        remotes = IBMQ.backends(simulator=False)
-        for backend in remotes:
-            properties = backend.properties()
-            if backend.configuration().simulator:
-                self.assertEqual(properties, None)
-
-    @requires_qe_access
-    @skip('Skipping until support in production API')
-    def test_remote_backend_defaults(self, qe_token, qe_url):
-        """Test backend pulse defaults."""
-        IBMQ.enable_account(qe_token, qe_url)
-        remotes = IBMQ.backends(simulator=False)
-        for backend in remotes:
-            _ = backend.defaults()
-
-    @requires_qe_access
-    def test_qobj_headers_in_result_sims(self, qe_token, qe_url):
-        """Test that the qobj headers are passed onto the results for sims."""
-        IBMQ.enable_account(qe_token, qe_url)
-        backends = IBMQ.backends(simulator=True)
-
-        custom_qobj_header = {'x': 1, 'y': [1, 2, 3], 'z': {'a': 4}}
-
-        for backend in backends:
-            with self.subTest(backend=backend):
-                qobj = compile(self.qc1, backend)
-
-                # Update the Qobj header.
-                qobj.header = QobjHeader.from_dict(custom_qobj_header)
-                # Update the Qobj.experiment header.
-                qobj.experiments[0].header.some_field = 'extra info'
-
-                result = backend.run(qobj).result()
-                self.assertEqual(result.header.to_dict(), custom_qobj_header)
-                self.assertEqual(result.results[0].header.some_field,
-                                 'extra info')
+    Executes a series of circuits of special interest using
+    all available remote backends, comparing results against
+    local simulator 'local_qasm_simulator' as ground truth.
+    """
 
     @slow_test
-    @requires_qe_access
-    def test_qobj_headers_in_result_devices(self, qe_token, qe_url):
-        """Test that the qobj headers are passed onto the results for devices."""
-        IBMQ.enable_account(qe_token, qe_url)
-        backends = IBMQ.backends(simulator=False)
+    def setUp(self):
+        super().setUp()
+        self._local_backend = BasicAer.get_backend('qasm_simulator')
+        self._remote_backends = self.get_backends()
 
-        custom_qobj_header = {'x': 1, 'y': [1, 2, 3], 'z': {'a': 4}}
+    @requires_provider
+    def get_backends(self, provider=None):
+        """Return all available remote backends."""
+        return provider.backends()
 
-        for backend in backends:
-            with self.subTest(backend=backend):
-                qobj = compile(self.qc1, backend)
+    def test_one_qubit_no_operation(self):
+        """Test one circuit, one register, in-order readout."""
+        qr = QuantumRegister(1)
+        cr = ClassicalRegister(1)
+        circuit = QuantumCircuit(qr, cr)
+        circuit.measure(qr[0], cr[0])
 
-                # Update the Qobj header.
-                qobj.header = QobjHeader.from_dict(custom_qobj_header)
-                # Update the Qobj.experiment header.
-                qobj.experiments[0].header.some_field = 'extra info'
+        qobj = assemble(transpile(circuit, backend=self._local_backend))
+        result_local = self._local_backend.run(qobj).result()
 
-                result = backend.run(qobj).result()
-                self.assertEqual(result.header.to_dict(), custom_qobj_header)
-                self.assertEqual(result.results[0].header.some_field,
-                                 'extra info')
+        for remote_backend in self._remote_backends:
+            with self.subTest(backend=remote_backend):
+                result_remote = remote_backend.run(qobj).result()
+                self.assertDictAlmostEqual(result_remote.get_counts(circuit),
+                                           result_local.get_counts(circuit), delta=50)
 
-    @requires_qe_access
-    def test_aliases(self, qe_token, qe_url):
-        """Test that display names of devices map the regular names."""
-        IBMQ.enable_account(qe_token, qe_url)
-        aliased_names = IBMQ._aliased_backend_names()
+    def test_one_qubit_operation(self):
+        """Test one circuit, one register, in-order readout."""
+        qr = QuantumRegister(1)
+        cr = ClassicalRegister(1)
+        circuit = QuantumCircuit(qr, cr)
+        circuit.x(qr[0])
+        circuit.measure(qr[0], cr[0])
 
-        for display_name, backend_name in aliased_names.items():
-            with self.subTest(display_name=display_name,
-                              backend_name=backend_name):
-                try:
-                    backend_by_name = IBMQ.get_backend(backend_name)
-                except QiskitBackendNotFoundError:
-                    # The real name of the backend might not exist
-                    pass
-                else:
-                    backend_by_display_name = IBMQ.get_backend(display_name)
-                    self.assertEqual(backend_by_name, backend_by_display_name)
-                    self.assertEqual(backend_by_display_name.name(), backend_name)
+        qobj = assemble(transpile(circuit, backend=self._local_backend))
+        result_local = self._local_backend.run(qobj).result()
+
+        for remote_backend in self._remote_backends:
+            with self.subTest(backend=remote_backend):
+                result_remote = remote_backend.run(qobj).result()
+                self.assertDictAlmostEqual(result_remote.get_counts(circuit),
+                                           result_local.get_counts(circuit), delta=50)
+
+    def test_simple_circuit(self):
+        """Test one circuit, one register, in-order readout."""
+        qr = QuantumRegister(4)
+        cr = ClassicalRegister(4)
+        circuit = QuantumCircuit(qr, cr)
+        circuit.x(qr[0])
+        circuit.x(qr[2])
+        circuit.measure(qr[0], cr[0])
+        circuit.measure(qr[1], cr[1])
+        circuit.measure(qr[2], cr[2])
+        circuit.measure(qr[3], cr[3])
+
+        qobj = assemble(transpile(circuit, backend=self._local_backend))
+        result_local = self._local_backend.run(qobj).result()
+
+        for remote_backend in self._remote_backends:
+            with self.subTest(backend=remote_backend):
+                result_remote = remote_backend.run(qobj).result()
+                self.assertDictAlmostEqual(result_remote.get_counts(circuit),
+                                           result_local.get_counts(circuit), delta=50)
+
+    def test_readout_order(self):
+        """Test one circuit, one register, out-of-order readout.
+        """
+        qr = QuantumRegister(4)
+        cr = ClassicalRegister(4)
+        circuit = QuantumCircuit(qr, cr)
+        circuit.x(qr[0])
+        circuit.x(qr[2])
+        circuit.measure(qr[0], cr[2])
+        circuit.measure(qr[1], cr[0])
+        circuit.measure(qr[2], cr[1])
+        circuit.measure(qr[3], cr[3])
+
+        qobj_local = assemble(transpile(circuit, backend=self._local_backend))
+        result_local = self._local_backend.run(qobj_local).result()
+
+        for remote_backend in self._remote_backends:
+            with self.subTest(backend=remote_backend):
+                qobj_remote = assemble(transpile(circuit, backend=remote_backend))
+                result_remote = remote_backend.run(qobj_remote).result()
+                self.assertDictAlmostEqual(result_remote.get_counts(circuit),
+                                           result_local.get_counts(circuit), delta=50)
+
+    def test_multi_register(self):
+        """Test one circuit, two registers, out-of-order readout."""
+        qr1 = QuantumRegister(2)
+        qr2 = QuantumRegister(2)
+        cr1 = ClassicalRegister(3)
+        cr2 = ClassicalRegister(1)
+        circuit = QuantumCircuit(qr1, qr2, cr1, cr2)
+        circuit.h(qr1[0])
+        circuit.cx(qr1[0], qr2[1])
+        circuit.h(qr2[0])
+        circuit.cx(qr2[0], qr1[1])
+        circuit.x(qr1[1])
+        circuit.measure(qr1[0], cr2[0])
+        circuit.measure(qr1[1], cr1[0])
+        circuit.measure(qr1[1], cr2[0])
+        circuit.measure(qr1[1], cr1[2])
+        circuit.measure(qr2[0], cr1[2])
+        circuit.measure(qr2[1], cr1[1])
+
+        qobj = assemble(transpile(circuit, backend=self._local_backend))
+        result_local = self._local_backend.run(qobj).result()
+
+        for remote_backend in self._remote_backends:
+            with self.subTest(backend=remote_backend):
+                result_remote = remote_backend.run(qobj).result()
+                self.assertDictAlmostEqual(result_remote.get_counts(circuit),
+                                           result_local.get_counts(circuit), delta=50)
+
+    def test_multi_circuit(self):
+        """Test two circuits, two registers, out-of-order readout."""
+        qr1 = QuantumRegister(2)
+        qr2 = QuantumRegister(2)
+        cr1 = ClassicalRegister(3)
+        cr2 = ClassicalRegister(1)
+        circuit1 = QuantumCircuit(qr1, qr2, cr1, cr2)
+        circuit1.h(qr1[0])
+        circuit1.cx(qr1[0], qr2[1])
+        circuit1.h(qr2[0])
+        circuit1.cx(qr2[0], qr1[1])
+        circuit1.x(qr1[1])
+        circuit1.measure(qr1[0], cr2[0])
+        circuit1.measure(qr1[1], cr1[0])
+        circuit1.measure(qr1[0], cr2[0])
+        circuit1.measure(qr1[1], cr1[2])
+        circuit1.measure(qr2[0], cr1[2])
+        circuit1.measure(qr2[1], cr1[1])
+        circuit2 = QuantumCircuit(qr1, qr2, cr1)
+        circuit2.h(qr1[0])
+        circuit2.cx(qr1[0], qr1[1])
+        circuit2.h(qr2[1])
+        circuit2.cx(qr2[1], qr1[1])
+        circuit2.measure(qr1[0], cr1[0])
+        circuit2.measure(qr1[1], cr1[1])
+        circuit2.measure(qr1[0], cr1[2])
+        circuit2.measure(qr2[1], cr1[2])
+
+        qobj = assemble(transpile([circuit1, circuit2], backend=self._local_backend))
+        result_local = self._local_backend.run(qobj).result()
+
+        for remote_backend in self._remote_backends:
+            with self.subTest(backend=remote_backend):
+                result_remote = remote_backend.run(qobj).result()
+                self.assertDictAlmostEqual(result_remote.get_counts(circuit1),
+                                           result_local.get_counts(circuit1), delta=50)
+                self.assertDictAlmostEqual(result_remote.get_counts(circuit2),
+                                           result_local.get_counts(circuit2), delta=50)
